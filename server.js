@@ -78,7 +78,7 @@ async function getSalesmen(){
 
 
 
-app.get('/testThird', jsonParser,async function(request, response){
+app.get('/getSuggestedSalesmen', jsonParser,async function(request, response){
 	var third = await getAreaRating();
 	var pgClient = new pg.Client(connectionString);
         pgClient.connect();
