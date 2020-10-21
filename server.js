@@ -49,8 +49,128 @@ async function getAverageValue(lat1, long1, lat2, long2){
 	var pgClient = new pg.Client(connectionString);
 	pgClient.connect();
 	var { rows } = await pgClient.query("select AVG(value) from address where lat < $1 and  Lat > $2 and long > $3 and long < $4 and value > 0",[lat1, lat2, long1, long2]);
+	pgClient.end();
 	return rows[0];
 }
+
+
+async function getAreaRating(){
+	var pgClient = new pg.Client(connectionString);
+	pgClient.connect();
+	var { rows } = await pgClient.query("select count(addressid) as num from Address where value>0");
+	var third = rows[0]["num"];
+	return Math.floor(third/3);
+	pgClient.end();
+}
+
+
+async function getSalesmen(){
+	var salesmen = []
+	var pgClient = new pg.Client(connectionString);
+        pgClient.connect();
+        var { rows } = await pgClient.query("select userid from USERS where status='salesman'");
+	for (row in rows){
+		salesmen.push(rows[row]["userid"]);
+	}
+        return salesmen;
+        pgClient.end();
+}
+
+
+
+app.get('/testThird', jsonParser,async function(request, response){
+	var third = await getAreaRating();
+	var pgClient = new pg.Client(connectionString);
+        pgClient.connect();
+	var { rows } = await pgClient.query("select value from address where value>0 ORDER BY value limit 1 offset $1",[third]);
+	var bottomTop = rows[0]["value"];
+	var { rows } = await pgClient.query("select value from address where value>0 ORDER BY value limit 1 offset $1",[third*2]);
+	var middleTop = rows[0]["value"];
+	var salesmen = await getSalesmen();
+	console.log("salesmen = " + salesmen);
+	var bestConv = [];
+	var i;
+	for (i = 0; i < salesmen.length; i++){
+		console.log(salesmen[i], bottomTop, middleTop);
+		var lowConv;
+		try {
+			var {rows} = await pgClient.query("select (select cast(count(knockid) as decimal) from knock join address on address.addressid = knock.addressid where status='Sold' and value>0 and userid=$1 and value <= $2) / (select count(knockid) from knock join address on address.addressid = knock.addressid where value > 0 and value <= $2 and userid=$1) as converge",[salesmen[i], bottomTop]);
+			lowConv = rows[0]["converge"];
+			console.log("low conv = " +lowConv);
+		}catch{
+			console.log("entered low catch");
+			lowConv = 0;
+			console.log("low conv = " +lowConv);
+		}
+		var midConv;
+		try{
+			var {rows} = await pgClient.query("select (select cast(count(knockid) as decimal) from knock join address on address.addressid = knock.addressid where status='Sold' and value>$1 and userid=$2 and value < $3) / (select count(knockid) from knock join address on address.addressid = knock.addressid where value>$1 and userid=$2 and value<$3) as converge",[bottomTop,salesmen[i],middleTop]);
+			midConv = rows[0]["converge"];
+			console.log("mid conv = " + midConv);
+		}catch{
+			console.log("entered mid catch");
+			midConv = 0;
+			console.log("mid conv = " + midConv);
+		}
+		var highConv;
+		try{
+                	var {rows} = await pgClient.query("select (select cast(count(knockid) as decimal) from knock join address on address.addressid = knock.addressid where status='Sold' and value>=$1 and userid=$2) / (select count(knockid) from knock join address on address.addressid = knock.addressid where value>=$1 and userid=$2) as converge",[middleTop, salesmen[i]]);
+			highConv = rows[0]["converge"];
+			console.log("high conv = " +highConv);
+		}catch{
+			console.log("entered high catch");
+			highConv = 0;
+			console.log("high conv = " + highConv);
+		}
+		if (lowConv >= midConv){
+			if(lowConv >= highConv){
+				bestConv.push("low");
+			}
+			else{
+				bestConv.push("high");
+			}
+		}else if (midConv >= highConv){
+			bestConv.push("mid");
+		}
+		else{
+			bestConv.push("high");
+		}
+	}
+	if (request.body.value < bottomTop){
+		var answer = [];
+		var i;
+		for (i = 0; i < bestConv.length; ++i){
+			if (bestConv[i] == "low"){
+				answer.push(salesmen[i]);
+			}
+		}
+		var { rows } = await pgClient.query("Select firstname, lastname, userid from users where userid = ANY($1)",[answer]);
+		response.send(rows);
+
+	}else if (request.body.value < middleTop){
+		var answer = [];
+                var i;
+                for (i = 0; i < bestConv.length; ++i){
+                        if (bestConv[i] == "mid"){
+                                answer.push(salesmen[i]);
+                        }
+                }
+                var { rows } = await pgClient.query("Select firstname, lastname, userid from users where userid = ANY($1)",[answer]);
+                response.send(rows);
+	}
+	else{
+	   	var answer = [];
+                var i;
+                for (i = 0; i < bestConv.length; ++i){
+                        if (bestConv[i] == "high"){
+                                answer.push(salesmen[i]);
+                        }
+                }
+                var { rows } = await pgClient.query("Select firstname, lastname, userid from users where userid = ANY($1)",[answer]);
+                response.send(rows);
+	}
+	pgClient.end();
+});
 
 app.post('/deleteAreas', function(request, response) {
 	var pgClient = new pg.Client(connectionString);
@@ -112,6 +232,7 @@ app.post('/addArea', jsonParser, async function(request, response){
 	var pgClient = new pg.Client(connectionString);
 	pgClient.connect();
 	let res = await pgClient.query("INSERT into Area (lattopleft, longtopleft, latbottomright, longbottomright, medianhomevalue) VALUES($1,$2,$3,$4,$5)",[request.body.topleftlat,request.body.topleftlong, request.body.bottomrightlat,request.body.bottomrightlong, Math.trunc(avgVal["avg"])]);
+	pgClient.end();
 	response.send({"avg":Math.trunc(avgVal["avg"])});
 });
 
