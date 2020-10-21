@@ -232,8 +232,9 @@ app.post('/addArea', jsonParser, async function(request, response){
 	var pgClient = new pg.Client(connectionString);
 	pgClient.connect();
 	let res = await pgClient.query("INSERT into Area (lattopleft, longtopleft, latbottomright, longbottomright, medianhomevalue) VALUES($1,$2,$3,$4,$5)",[request.body.topleftlat,request.body.topleftlong, request.body.bottomrightlat,request.body.bottomrightlong, Math.trunc(avgVal["avg"])]);
+	var {rows} = await pgClient.query("Select areaid from area order by areaid desc limit 1");
 	pgClient.end();
-	response.send({"avg":Math.trunc(avgVal["avg"])});
+	response.send({"avg":Math.trunc(avgVal["avg"]),"areaid":rows[0]["areaid"]});
 });
 
 
